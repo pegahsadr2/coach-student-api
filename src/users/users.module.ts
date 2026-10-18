@@ -1,20 +1,13 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
-import { User, UserSchema } from './schemas/user.schema';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { Coach } from './entities/coach.entity';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([
-      {
-        name: User.name,
-        schema: UserSchema,
-      },
-    ]),
-  ],
-
+  imports: [TypeOrmModule.forFeature([Coach])],
   controllers: [UsersController],
   providers: [UsersService, RolesGuard],
   exports: [UsersService],

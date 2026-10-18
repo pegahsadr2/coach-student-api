@@ -1,30 +1,44 @@
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { User, UserDocument } from './schemas/user.schema';
+import { Injectable, ConflictException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { Coach } from './entities/coach.entity';
 import { Role } from './enums/role.enum';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User.name)
-    private readonly userModel: Model<UserDocument>,
+    @InjectRepository(Coach)
+    private readonly coachRepository: Repository<Coach>,
   ) {}
 
-  async createUser(
-    username: string,
-    password: string,
-    role: Role,
-  ): Promise<UserDocument> {
-    const user = new this.userModel({
-      username,
-      password,
-      role,
+  async createCoach(data: {
+    firstName: string;
+    lastName: string;
+    personnelCode: string;
+    passwordHash: string;
+    role: Role;
+  }): Promise<Coach> {
+    const existingCoach = await this.findByPersonnelCode(data.personnelCode);
+
+    if (existingCoach) {
+      throw new ConflictException('Personnel code already exists');
+    }
+
+    const coach = this.coachRepository.create({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      personnelCode: data.personnelCode,
+      passwordHash: data.passwordHash,
+      role: data.role,
     });
-    return user.save();
+
+    return this.coachRepository.save(coach);
   }
 
-  async findByUsername(username: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({ username }).exec();
+  async findByPersonnelCode(personnelCode: string): Promise<Coach | null> {
+    return this.coachRepository.findOne({
+      where: { personnelCode },
+    });
   }
 }
