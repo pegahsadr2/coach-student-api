@@ -1,9 +1,4 @@
-
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity({ name: 'exams' })
 export class Exam {
@@ -40,9 +35,9 @@ export class Exam {
   @Column({
     name: 'started_at',
     type: 'timestamp without time zone',
-    default: () => 'now()',
+    nullable: true,
   })
-  startedAt: Date;
+  startedAt: Date | null;
 
   @Column({
     name: 'finished_at',
@@ -50,6 +45,13 @@ export class Exam {
     nullable: true,
   })
   finishedAt: Date | null;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'PENDING',
+  })
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED';
 
   @Column({
     name: 'total_score',
@@ -60,4 +62,3 @@ export class Exam {
   })
   totalScore: string | null;
 }
-

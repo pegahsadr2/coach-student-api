@@ -22,19 +22,11 @@ import { Role } from '../users/enums/role.enum';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.COACH, Role.HEAD_COACH)
 export class StudentsController {
-  constructor(
-    private readonly studentsService: StudentsService,
-  ) {}
+  constructor(private readonly studentsService: StudentsService) {}
 
   @Post()
-  create(
-    @Body() dto: CreateStudentDto,
-    @Request() req: any,
-  ) {
-    return this.studentsService.create(
-      dto,
-      Number(req.user.id),
-    );
+  create(@Body() dto: CreateStudentDto, @Request() req: any) {
+    return this.studentsService.create(dto, Number(req.user.id));
   }
 
   @Get()
@@ -42,10 +34,20 @@ export class StudentsController {
     return this.studentsService.findAll();
   }
 
+  @Get('me/academic-record')
+  @Roles(Role.STUDENT)
+  getMyAcademicRecord(@Request() req: any) {
+    return this.studentsService.getAcademicRecord(Number(req.user.id));
+  }
+
+  @Get('course-academic-records')
+  @Roles(Role.COACH)
+  getCourseAcademicRecords(@Request() req: any) {
+    return this.studentsService.getCourseAcademicRecords(Number(req.user.id));
+  }
+
   @Get(':id')
-  async findOne(
-    @Param('id', ParseIntPipe) id: number,
-  ) {
+  async findOne(@Param('id', ParseIntPipe) id: number) {
     const student = await this.studentsService.findOne(id);
 
     if (!student) {
@@ -55,4 +57,3 @@ export class StudentsController {
     return student;
   }
 }
-

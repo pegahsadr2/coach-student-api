@@ -32,7 +32,7 @@ import { ExamsModule } from './exams/exams.module';
     }),
     CoursesModule,
     SessionsModule,
-    StudentsModule, 
+    StudentsModule,
     UsersModule,
     AuthModule,
     ExamsModule,
