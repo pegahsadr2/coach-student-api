@@ -17,7 +17,9 @@ import { Role } from '../users/enums/role.enum';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { AddStudentToSessionDto } from './dto/add-student-to-session.dto';
 import { SessionsService } from './sessions.service';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth('access-token')
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SessionsController {

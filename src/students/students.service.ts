@@ -12,6 +12,12 @@ export class StudentsService {
     private readonly studentsRepository: Repository<Student>,
   ) {}
 
+  async findByStudentCode(studentCode: string): Promise<Student | null> {
+    return this.studentsRepository.findOne({
+      where: { studentCode },
+    });
+  }
+
   async create(dto: CreateStudentDto, coachId: number): Promise<Student> {
     const existingStudent = await this.studentsRepository.findOne({
       where: { studentCode: dto.studentCode },

@@ -16,6 +16,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
 import { CreateExamActivityDto } from './dto/create-exam-activity.dto';
 import { ApplyExamErrorDto } from './dto/apply-exam-error.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Exams')
+@ApiBearerAuth('access-token')
 @Controller('exams')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ExamsController {
@@ -67,19 +71,19 @@ export class ExamsController {
   }
 
   @Post(':id/apply-error')
-@Roles(Role.COACH, Role.HEAD_COACH)
-applyError(
-  @Param('id', ParseIntPipe) examId: number,
-  @Body() dto: ApplyExamErrorDto,
-  @Req() request: any,
-) {
-  return this.examsService.applyError(
-    examId,
-    dto,
-    Number(request.user.id),
-    request.user.role,
-  );
-}
+  @Roles(Role.COACH, Role.HEAD_COACH)
+  applyError(
+    @Param('id', ParseIntPipe) examId: number,
+    @Body() dto: ApplyExamErrorDto,
+    @Req() request: any,
+  ) {
+    return this.examsService.applyError(
+      examId,
+      dto,
+      Number(request.user.id),
+      request.user.role,
+    );
+  }
 
   @Post(':id/visual-errors')
   @Roles(Role.COACH, Role.HEAD_COACH)

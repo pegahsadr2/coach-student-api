@@ -16,8 +16,9 @@ import { Role } from '../users/enums/role.enum';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { AssignCoachDto } from './dto/assign-coach.dto';
 import { CoursesService } from './courses.service';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
-@Controller('courses')
+@ApiBearerAuth('access-token')@Controller('courses')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CoursesController {
   constructor(private readonly coursesService: CoursesService) {}

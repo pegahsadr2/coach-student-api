@@ -1,4 +1,3 @@
-
 import {
   Controller,
   Post,
@@ -9,15 +8,18 @@ import {
   NotFoundException,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
-
 import { StudentsService } from './students.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Students')
+@ApiBearerAuth('access-token')
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.COACH, Role.HEAD_COACH)
@@ -44,6 +46,11 @@ export class StudentsController {
   @Roles(Role.COACH)
   getCourseAcademicRecords(@Request() req: any) {
     return this.studentsService.getCourseAcademicRecords(Number(req.user.id));
+  }
+
+  @Get('search')
+  findByStudentCode(@Query('studentCode') studentCode: string) {
+    return this.studentsService.findByStudentCode(studentCode);
   }
 
   @Get(':id')
