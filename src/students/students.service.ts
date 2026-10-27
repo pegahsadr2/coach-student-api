@@ -1,9 +1,10 @@
-import { Injectable, ConflictException, NotFoundException,} from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException,} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Student } from './entities/student.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { UpdateStudentDto } from './dto/update-student.dto';
 
 @Injectable()
 export class StudentsService {
@@ -64,6 +65,61 @@ export class StudentsService {
     return this.studentsRepository.findOne({
       where: { id },
     });
+  }
+
+  async update(id: number, dto: UpdateStudentDto): Promise<Student> {
+    const student = await this.findOne(id);
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(([, value]) => value !== undefined),
+    ) as UpdateStudentDto;
+
+    if (Object.keys(changes).length === 0) {
+      throw new BadRequestException('Provide at least one field to update');
+    }
+
+    if (changes.studentCode && changes.studentCode !== student.studentCode) {
+      const existingStudent = await this.studentsRepository.findOne({
+        where: { studentCode: changes.studentCode },
+      });
+
+      if (existingStudent && existingStudent.id !== id) {
+        throw new ConflictException(
+          'A student with this student code already exists',
+        );
+      }
+    }
+
+    Object.assign(student, changes);
+    return this.studentsRepository.save(student);
+  }
+
+  async remove(id: number): Promise<{ message: string; id: number }> {
+    const student = await this.findOne(id);
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    try {
+      await this.studentsRepository.remove(student);
+    } catch (error) {
+      const databaseError = error as {
+        code?: string;
+        driverError?: { code?: string };
+      };
+      const databaseCode = databaseError?.code ?? databaseError?.driverError?.code;
+      if (databaseCode === '23503') {
+        throw new ConflictException(
+          'Cannot delete this student because related records prevent deletion.',
+        );
+      }
+      throw error;
+    }
+
+    return { message: 'Student deleted successfully', id };
   }
 
   async getAcademicRecord(studentId: number) {
@@ -137,5 +193,24 @@ export class StudentsService {
       .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('e.finished_at', 'DESC', 'NULLS LAST')
       .getRawMany();
+  }
+
+  async findByIdForPasswordChange(id: number) {
+    return this.studentsRepository
+      .createQueryBuilder('student')
+      .addSelect('student.passwordHash')
+      .where('student.id = :id', { id })
+      .getOne();
+  }
+
+  async updatePasswordHash(id: number, passwordHash: string): Promise<void> {
+    const result = await this.studentsRepository.update(
+      { id },
+      { passwordHash },
+    );
+
+    if (!result.affected) {
+      throw new NotFoundException('Student not found');
+    }
   }
 }

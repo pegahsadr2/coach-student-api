@@ -7,6 +7,9 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { StudentsModule } from '../students/students.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { RevokedToken } from './entities/revoked-token.entity';
+import { TokenRevocationService } from './token-revocation.service';
 
 @Module({
   imports: [
@@ -17,10 +20,15 @@ import { StudentsModule } from '../students/students.module';
 
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
+        signOptions: {
+          expiresIn: '1h',
+        },
       }),
     }),
+
+   TypeOrmModule.forFeature([RevokedToken]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
+  providers: [AuthService, JwtStrategy, RolesGuard, TokenRevocationService ],
 })
 export class AuthModule {}

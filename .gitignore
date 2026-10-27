@@ -63,3 +63,8 @@ dist/
 coverage/
 
 coach_student_db_backup.sql
+
+# Local backup files - do not push to GitHub
+/backups/
+/backend-coach-student.zip
+*.bak

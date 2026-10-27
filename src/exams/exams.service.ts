@@ -11,6 +11,7 @@ import { Session } from '../sessions/entities/session.entity';
 import { Student } from '../students/entities/student.entity';
 import { Role } from '../users/enums/role.enum';
 import { CreateExamDto } from './dto/create-exam.dto';
+import { UpdateExamDto } from './dto/update-exam.dto';
 import { ExamActivity } from './entities/exam-activity.entity';
 import { CreateExamActivityDto } from './dto/create-exam-activity.dto';
 import { ExamAreaResult } from './entities/exam-area-result.entity';
@@ -52,6 +53,299 @@ export class ExamsService {
     }
 
     return exam;
+  }
+
+  async getReportCard(examId: number, userId: number, userRole: Role) {
+    const exam = await this.examRepository.findOne({
+      where: { id: examId },
+    });
+
+    if (!exam) {
+      throw new NotFoundException('Exam not found');
+    }
+
+    if (userRole === Role.STUDENT && exam.studentId !== userId) {
+      // Do not disclose whether another student's exam exists.
+      throw new NotFoundException('Exam not found');
+    }
+
+    if (userRole === Role.COACH && exam.coachId !== userId) {
+      throw new ForbiddenException('You are not responsible for this exam');
+    }
+
+    if (![Role.STUDENT, Role.COACH, Role.HEAD_COACH].includes(userRole)) {
+      throw new ForbiddenException('You are not allowed to view this report card');
+    }
+
+    if (exam.status !== 'COMPLETED') {
+      throw new BadRequestException(
+        'The report card is available after the exam has been completed',
+      );
+    }
+
+    const detailsRows = await this.examRepository.manager.query(
+      `SELECT
+         e.id AS "examId",
+         e.mode AS "mode",
+         e.exam_type AS "examType",
+         e.status AS "status",
+         e.started_at AS "startedAt",
+         e.finished_at AS "finishedAt",
+         e.total_score AS "totalScore",
+         st.id AS "studentId",
+         st.student_code AS "studentCode",
+         st.first_name AS "studentFirstName",
+         st.last_name AS "studentLastName",
+         se.id AS "sessionId",
+         se.name AS "sessionName",
+         se.session_date AS "sessionDate",
+         se.session_time AS "sessionTime",
+         c.id AS "courseId",
+         c.name AS "courseName",
+         co.id AS "coachId",
+         co.personnel_code AS "coachPersonnelCode",
+         co.first_name AS "coachFirstName",
+         co.last_name AS "coachLastName",
+         ea.id AS "examAreaId",
+         ea.name AS "examAreaName",
+         ea.score_weight AS "baseScore",
+         ea.duration_minutes AS "durationMinutes",
+         ear.passed AS "passed",
+         ear.score AS "areaScore"
+       FROM exams e
+       INNER JOIN students st ON st.id = e.student_id
+       LEFT JOIN sessions se ON se.id = e.session_id
+       LEFT JOIN courses c ON c.id = se.course_id
+       LEFT JOIN coaches co ON co.id = e.coach_id
+       LEFT JOIN exam_areas ea ON ea.id = e.exam_area_id
+       LEFT JOIN exam_area_results ear
+         ON ear.exam_id = e.id AND ear.exam_area_id = e.exam_area_id
+       WHERE e.id = $1`,
+      [examId],
+    );
+
+    if (detailsRows.length === 0) {
+      throw new NotFoundException('Report card details not found');
+    }
+
+    const activities = await this.examRepository.manager.query(
+      `SELECT
+         a.id AS "id",
+         a.exam_area_id AS "examAreaId",
+         ea.name AS "examAreaName",
+         a.error_type_id AS "errorTypeId",
+         a.activity_type AS "activityType",
+         a.title AS "title",
+         a.penalty AS "penalty",
+         a.occurred_at AS "occurredAt"
+       FROM exam_activities a
+       LEFT JOIN exam_areas ea ON ea.id = a.exam_area_id
+       WHERE a.exam_id = $1
+       ORDER BY a.occurred_at ASC, a.id ASC`,
+      [examId],
+    );
+
+    const details = detailsRows[0];
+    const penaltySummary = await this.examRepository.manager.query(
+      `SELECT
+         COALESCE(SUM(penalty) FILTER (
+           WHERE activity_type IN ('error', 'visual_error', 'failure')
+         ), 0)::numeric AS "totalPenalty",
+         COUNT(*) FILTER (
+           WHERE activity_type IN ('error', 'visual_error', 'failure')
+         )::int AS "errorCount"
+       FROM exam_activities
+       WHERE exam_id = $1`,
+      [examId],
+    );
+
+    return {
+      exam: details,
+      scoring: {
+        baseScore: details.baseScore,
+        totalPenalty: penaltySummary[0].totalPenalty,
+        errorCount: penaltySummary[0].errorCount,
+        totalScore: details.totalScore,
+        passed: details.passed,
+        result: details.passed === true ? 'PASSED' : 'FAILED',
+      },
+      activities,
+    };
+  }
+
+  async getExamActivities(examId: number, userId: number, userRole: Role) {
+    const exam = await this.examRepository.findOne({
+      where: { id: examId },
+    });
+
+    if (!exam) {
+      throw new NotFoundException('Exam not found');
+    }
+
+    // A student can only view their own exam.
+    if (userRole === Role.STUDENT && exam.studentId !== userId) {
+      throw new NotFoundException('Exam not found');
+    }
+
+    // A coach can only view exams they are responsible for.
+    if (userRole === Role.COACH && exam.coachId !== userId) {
+      throw new ForbiddenException('You are not responsible for this exam');
+    }
+
+    return this.examActivityRepository.find({
+      where: { examId: exam.id },
+      order: {
+        occurredAt: 'ASC',
+        id: 'ASC',
+      },
+    });
+  }
+
+  async updatePendingExam(
+    examId: number,
+    dto: UpdateExamDto,
+    userId: number,
+    userRole: Role,
+  ) {
+    const hasChanges = Object.values(dto).some((value) => value !== undefined);
+    if (!hasChanges) {
+      throw new BadRequestException('At least one field must be provided');
+    }
+
+    if (userRole !== Role.COACH && userRole !== Role.HEAD_COACH) {
+      throw new ForbiddenException('You are not allowed to update exams');
+    }
+
+    return this.examRepository.manager.transaction(async (manager) => {
+      const examRepo = manager.getRepository(Exam);
+      const sessionRepo = manager.getRepository(Session);
+      const studentRepo = manager.getRepository(Student);
+
+      // Locking serializes edits against the student's start request.
+      const exam = await examRepo.findOne({
+        where: { id: examId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!exam) {
+        throw new NotFoundException('Exam not found');
+      }
+
+      if (userRole === Role.COACH && exam.coachId !== userId) {
+        throw new ForbiddenException('You are not responsible for this exam');
+      }
+
+      if (exam.status !== 'PENDING') {
+        throw new BadRequestException(
+          `Only pending exams can be updated. Current status: ${exam.status}`,
+        );
+      }
+
+      // Do not silently leave pre-exam error records attached to changed settings.
+      const activityCounts: Array<{ count: number }> = await manager.query(
+        'SELECT COUNT(*)::int AS count FROM exam_activities WHERE exam_id = $1',
+        [exam.id],
+      );
+      if (Number(activityCounts[0]?.count ?? 0) > 0) {
+        throw new BadRequestException(
+          'This exam already has activities/errors. Cancel it and create a new exam instead of editing it.',
+        );
+      }
+
+      const nextSessionId = dto.sessionId ?? exam.sessionId;
+      const nextStudentId = dto.studentId ?? exam.studentId;
+      const nextExamAreaId = dto.examAreaId ?? exam.examAreaId;
+
+      if (nextExamAreaId === null) {
+        throw new BadRequestException('An exam area must be assigned');
+      }
+
+      const session = await sessionRepo.findOne({
+        where: { id: nextSessionId },
+      });
+      if (!session) {
+        throw new NotFoundException('Session not found');
+      }
+
+      if (userRole === Role.COACH && session.coachId !== userId) {
+        throw new ForbiddenException(
+          'You can only assign this exam to one of your own sessions',
+        );
+      }
+
+      const student = await studentRepo.findOne({
+        where: { id: nextStudentId },
+      });
+      if (!student) {
+        throw new NotFoundException('Student not found');
+      }
+
+      const enrollment = await manager.query(
+        `SELECT 1
+         FROM session_students
+         WHERE session_id = $1 AND student_id = $2`,
+        [nextSessionId, nextStudentId],
+      );
+      if (enrollment.length === 0) {
+        throw new BadRequestException(
+          'Student is not enrolled in the selected session',
+        );
+      }
+
+      const areaRows = await manager.query(
+        'SELECT id FROM exam_areas WHERE id = $1',
+        [nextExamAreaId],
+      );
+      if (areaRows.length === 0) {
+        throw new NotFoundException('Exam area not found');
+      }
+
+      exam.sessionId = session.id;
+      exam.studentId = student.id;
+      exam.coachId = session.coachId;
+      exam.examAreaId = nextExamAreaId;
+      exam.mode = dto.mode ?? exam.mode;
+      exam.examType = dto.examType ?? exam.examType;
+
+      return examRepo.save(exam);
+    });
+  }
+
+  async cancelPendingExam(examId: number, userId: number, userRole: Role) {
+    if (userRole !== Role.COACH && userRole !== Role.HEAD_COACH) {
+      throw new ForbiddenException('You are not allowed to cancel exams');
+    }
+
+    return this.examRepository.manager.transaction(async (manager) => {
+      const examRepo = manager.getRepository(Exam);
+      const exam = await examRepo.findOne({
+        where: { id: examId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!exam) {
+        throw new NotFoundException('Exam not found');
+      }
+
+      if (userRole === Role.COACH && exam.coachId !== userId) {
+        throw new ForbiddenException('You are not responsible for this exam');
+      }
+
+      if (exam.status !== 'PENDING') {
+        throw new BadRequestException(
+          `Only pending exams can be canceled. Current status: ${exam.status}`,
+        );
+      }
+
+      exam.status = 'ABANDONED';
+      await examRepo.save(exam);
+
+      return {
+        message: 'Exam canceled successfully',
+        examId: exam.id,
+        status: exam.status,
+      };
+    });
   }
 
   async startExam(examId: number, studentId: number) {
@@ -338,15 +632,20 @@ export class ExamsService {
         error_count: string;
       }> = await manager.query(
         `SELECT
-     COALESCE(SUM(penalty), 0)::numeric AS total_penalty,
-     COUNT(*) FILTER (
-       WHERE activity_type IN ('error', 'visual_error', 'failure')
-     )::int AS error_count
-   FROM exam_activities
-   WHERE exam_id = $1`,
-        [exam.id],
+          COALESCE(
+            SUM(penalty) FILTER (
+              WHERE activity_type IN ('error', 'visual_error', 'failure')
+            ),
+            0
+          )::numeric AS total_penalty,
+          COUNT(*) FILTER (
+            WHERE activity_type IN ('error', 'visual_error', 'failure')
+          )::int AS error_count
+        FROM exam_activities
+        WHERE exam_id = $1
+          AND exam_area_id = $2`,
+        [exam.id, exam.examAreaId],
       );
-
       const baseScore = Number(areas[0].score_weight);
       const totalPenalty = Number(stats[0].total_penalty);
       const errorCount = Number(stats[0].error_count);

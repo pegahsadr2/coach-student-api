@@ -9,6 +9,10 @@ import { CoursesModule } from './courses/courses.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { StudentsModule } from './students/students.module'; 
 import { ExamsModule } from './exams/exams.module';
+import { ErrorTypesModule } from './error-types/error-types.module';
+import { ExamAreasModule } from './exam-areas/exam-areas.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { GuestPracticeModule } from './guest-practice/guest-practice.module';
 
 @Module({
   imports: [
@@ -36,6 +40,10 @@ import { ExamsModule } from './exams/exams.module';
     UsersModule,
     AuthModule,
     ExamsModule,
+    ErrorTypesModule,
+    ExamAreasModule,
+    DashboardModule,
+    GuestPracticeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
