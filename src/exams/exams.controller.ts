@@ -6,10 +6,11 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam,  ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ExamsService } from './exams.service';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
@@ -19,6 +20,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
 import { CreateExamActivityDto } from './dto/create-exam-activity.dto';
 import { ApplyExamErrorDto } from './dto/apply-exam-error.dto';
+import { SubmitIdentifiedErrorsDto } from './dto/submit-identified-errors.dto';
 
 @ApiTags('Exams')
 @ApiBearerAuth('access-token')
@@ -27,11 +29,22 @@ import { ApplyExamErrorDto } from './dto/apply-exam-error.dto';
 export class ExamsController {
   constructor(private readonly examsService: ExamsService) {}
 
-  @ApiOperation({ summary: 'List my exams', description: 'Student-only. Returns exams owned by the authenticated student. No request body is needed.' })
+  @ApiOperation({ summary: 'List my exams', description: 'Student-only. Returns exams owned by the authenticated student, including student/session/coach/course/exam-area display fields. No request body is needed.' })
   @Get('my')
   @Roles(Role.STUDENT)
   getMyExams(@Req() request: any) {
     return this.examsService.getMyExams(Number(request.user.id));
+  }
+
+  @ApiOperation({
+    summary: 'List my exams waiting for confirmation',
+    description:
+      'Student-only. Returns this student’s PENDING exams with session name/date, course name, coach name, student name, exam area, duration, mode, and exam type so the frontend can show a confirmation screen before starting.',
+  })
+  @Get('my/pending')
+  @Roles(Role.STUDENT)
+  getMyPendingExams(@Req() request: any) {
+    return this.examsService.getMyPendingExams(Number(request.user.id));
   }
 
   @ApiOperation({ summary: 'Get one of my exams', description: 'Student-only. The exam must belong to the authenticated student.' })
@@ -46,9 +59,120 @@ export class ExamsController {
   }
 
   @ApiOperation({
+    summary: 'Get available error options for student identification',
+    description:
+      'Student-only. Available after the external exam log has been received.',
+  })
+  @ApiParam({ name: 'id', example: 25 })
+  @Get(':id/error-options')
+  @Roles(Role.STUDENT)
+  getStudentErrorOptions(
+    @Param('id', ParseIntPipe) examId: number,
+    @Req() request: any,
+  ) {
+    return this.examsService.getStudentErrorOptions(
+      examId,
+      Number(request.user.id),
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Submit errors identified by student',
+    description:
+      'Student-only. The backend compares the selected errors with actual exam activities and creates the report card.',
+  })
+  @ApiParam({ name: 'id', example: 25 })
+  @ApiBody({ type: SubmitIdentifiedErrorsDto })
+  @Post(':id/identified-errors')
+  @Roles(Role.STUDENT)
+  submitIdentifiedErrors(
+    @Param('id', ParseIntPipe) examId: number,
+    @Body() dto: SubmitIdentifiedErrorsDto,
+    @Req() request: any,
+  ) {
+    return this.examsService.submitIdentifiedErrors(
+      examId,
+      Number(request.user.id),
+      dto,
+    );
+  }
+
+
+  @ApiOperation({
+    summary: 'Search exams for report cards',
+    description:
+      'Coaches can search their own exams. Head coaches can search all exams. Students cannot access this endpoint.',
+  })
+  @ApiQuery({ name: 'studentCode', required: false })
+  @ApiQuery({ name: 'studentName', required: false })
+  @ApiQuery({ name: 'courseId', required: false })
+  @ApiQuery({ name: 'sessionId', required: false })
+  @ApiQuery({ name: 'examAreaId', required: false })
+  @ApiQuery({
+    name: 'examType',
+    required: false,
+    enum: ['real_hardware', 'interactive'],
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'PENDING',
+      'IN_PROGRESS',
+      'AWAITING_STUDENT_REVIEW',
+      'COMPLETED',
+      'ABANDONED',
+    ] 
+  })
+  @ApiQuery({
+    name: 'fromDate',
+    required: false,
+    example: '2026-10-01',
+  })
+  @ApiQuery({
+    name: 'toDate',
+    required: false,
+    example: '2026-10-31',
+  })
+  @Get('reports')
+  @Roles(Role.COACH, Role.HEAD_COACH)
+  searchReportExams(
+    @Query('studentCode') studentCode: string,
+    @Query('studentName') studentName: string,
+    @Query('courseId') courseId: string,
+    @Query('sessionId') sessionId: string,
+    @Query('examAreaId') examAreaId: string,
+    @Query('examType') examType: string,
+    @Query('status') status: string,
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+    @Query('coachId') coachId: string,
+    @Req() request: any,
+  ) {
+    return this.examsService.searchReportExams(
+      {
+        studentCode,
+        studentName,
+        courseId,
+        sessionId,
+        examAreaId,
+        examType,
+        status,
+        fromDate,
+        toDate,
+        coachId,
+
+      },
+      Number(request.user.id),
+      request.user.role,
+    );
+  }
+
+
+  @ApiOperation({
     summary: 'Get a completed exam report card',
     description:
-      'Returns the student, coach, course, session, exam area, score calculation, and activity history. Students can view only their own report cards; coaches can view exams they are responsible for; head coaches can view all report cards. The exam must be COMPLETED. No request body is needed.',
+  'Coaches can view completed exams they are responsible for. Head coaches can view all completed exams. Students cannot access report cards.'
   })
   @ApiParam({ name: 'id', example: 1, description: 'ID of an existing completed exam.' })
   @ApiOkResponse({
@@ -108,7 +232,7 @@ export class ExamsController {
     },
   })
   @Get(':id/report-card')
-  @Roles(Role.STUDENT, Role.COACH, Role.HEAD_COACH)
+  @Roles(Role.COACH, Role.HEAD_COACH)
   getReportCard(@Param('id', ParseIntPipe) examId: number, @Req() request: any) {
     return this.examsService.getReportCard(
       examId,
@@ -120,7 +244,7 @@ export class ExamsController {
   @ApiOperation({ summary: 'List activities for an exam', description: 'Use an exam ID that the authenticated user is allowed to access. No request body is needed.' })
   @ApiParam({ name: 'id', example: 1, description: 'Existing exam ID.' })
   @Get(':id/activities')
-  @Roles(Role.STUDENT, Role.COACH, Role.HEAD_COACH)
+  @Roles(Role.COACH, Role.HEAD_COACH)
   getExamActivities(
     @Param('id', ParseIntPipe) examId: number,
     @Req() request: any,
@@ -238,19 +362,21 @@ export class ExamsController {
       },
     },
   })
-  @Post(':id/activities')
-  @Roles(Role.STUDENT)
-  createActivity(
-    @Param('id', ParseIntPipe) examId: number,
-    @Body() dto: CreateExamActivityDto,
-    @Req() request: any,
-  ) {
-    return this.examsService.createActivity(
-      examId,
-      Number(request.user.id),
-      dto,
-    );
-  }
+
+
+  // @Post(':id/activities')
+  // @Roles(Role.STUDENT)
+  // createActivity(
+  //   @Param('id', ParseIntPipe) examId: number,
+  //   @Body() dto: CreateExamActivityDto,
+  //   @Req() request: any,
+  // ) {
+  //   return this.examsService.createActivity(
+  //     examId,
+  //     Number(request.user.id),
+  //     dto,
+  //   );
+  // }
 
   @ApiOperation({ summary: 'Apply a pre-exam error', description: 'Coach or head coach. Exam must be PENDING; errorTypeId must refer to a predefined coach_applied or visual error for this exam area.' })
   @ApiParam({ name: 'id', example: 1, description: 'Existing pending exam ID.' })
@@ -288,11 +414,11 @@ export class ExamsController {
     );
   }
 
-  @ApiOperation({ summary: 'Finish an exam', description: 'Student-only. The exam must be IN_PROGRESS and belong to the logged-in student. No request body is needed.' })
-  @ApiParam({ name: 'id', example: 1, description: 'Existing in-progress exam ID belonging to the logged-in student.' })
-  @Post(':id/finish')
-  @Roles(Role.STUDENT)
-  finishExam(@Param('id', ParseIntPipe) examId: number, @Req() request: any) {
-    return this.examsService.finishExam(examId, Number(request.user.id));
-  }
+  // @ApiOperation({ summary: 'Finish an exam', description: 'Student-only. The exam must be IN_PROGRESS and belong to the logged-in student. No request body is needed.' })
+  // @ApiParam({ name: 'id', example: 1, description: 'Existing in-progress exam ID belonging to the logged-in student.' })
+  // @Post(':id/finish')
+  // @Roles(Role.STUDENT)
+  // finishExam(@Param('id', ParseIntPipe) examId: number, @Req() request: any) {
+  //   return this.examsService.finishExam(examId, Number(request.user.id));
+  // }
 }

@@ -30,3 +30,4 @@ export class RevokedToken {
   })
   createdAt: Date;
 }
+

@@ -59,19 +59,37 @@ export class AuthController {
     return this.authService.login(loginDto.username, loginDto.password);
   }
 
+@ApiBearerAuth('access-token')
+@ApiOperation({
+  summary: 'Change password',
+  description:
+    'Changes the authenticated user password and invalidates the current access token. Login again is required.',
+})
+
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
   changePassword(
-    @Req() req: { user: { id: string; role: Role } },
+    @Req()
+    req: {
+      user: {
+        id: string;
+        role: Role;
+        jti: string;
+        tokenExpiresAt: number;
+      };
+    },
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(
       Number(req.user.id),
       req.user.role,
       dto,
+      req.user.jti,
+      req.user.tokenExpiresAt,
     );
   }
-
+  
   @ApiBearerAuth('access-token')
   @Post('logout')
   @UseGuards(JwtAuthGuard)

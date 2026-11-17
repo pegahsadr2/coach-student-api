@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -99,21 +100,19 @@ export class ErrorTypesService {
     }
 
     if (
-      errorType.kind !== 'visual' &&
-      (dto.name !== undefined || dto.examAreaId !== undefined)
-    ) {
-      throw new BadRequestException(
-        'Only visual errors can have their name or exam area changed',
-      );
-    }
-
-    if (
       dto.name === undefined &&
       dto.examAreaId === undefined &&
       dto.penalty === undefined
     ) {
       throw new BadRequestException(
         'Provide at least one allowed field to update',
+      );
+    }
+
+    // Per requirements, only visual errors may have their name or exam area edited.
+    if (errorType.kind !== 'visual' && (dto.name !== undefined || dto.examAreaId !== undefined)) {
+      throw new BadRequestException(
+        'Only visual errors may have their name or exam area changed; other error types may only have their penalty updated',
       );
     }
 
@@ -150,7 +149,7 @@ export class ErrorTypesService {
     }
 
     if (errorType.kind !== 'visual') {
-      throw new BadRequestException('Only visual errors can be deleted');
+      throw new ForbiddenException('Only visual errors can be deleted');
     }
 
     // Preserve historical exam activities that refer to this error type.
@@ -160,12 +159,12 @@ export class ErrorTypesService {
 
     if (usageCount > 0) {
       throw new ConflictException(
-        'This visual error has been used in an exam and cannot be deleted',
+        'This error type has been used in an exam and cannot be deleted',
       );
     }
 
     await this.errorTypesRepository.remove(errorType);
 
-    return { message: 'Visual error deleted successfully' };
+    return { message: 'Error type deleted successfully' };
   }
 }

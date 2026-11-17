@@ -15,6 +15,13 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { Role } from '../users/enums/role.enum';
 
+type StudentSearchFilters = {
+  studentCode?: string;
+  firstName?: string;
+  lastName?: string;
+  idCardNumber?: string;
+};
+
 @Injectable()
 export class SessionsService {
   constructor(
@@ -181,9 +188,17 @@ export class SessionsService {
     };
   }
 
-  async getSessionStudents(sessionId: number, userId: number, userRole: Role) {
+  async getAvailableStudents(
+    sessionId: number,
+    userId: number,
+    userRole: Role,
+    filters: StudentSearchFilters = {},
+  ) {
     const session = await this.findSessionOrFail(sessionId);
     this.assertCanManageSession(session, userId, userRole);
+
+    const parameters: Array<string | number> = [sessionId];
+    const filterClause = this.buildStudentSearchClause(filters, parameters);
 
     return this.sessionRepository.manager.query(
       `SELECT
@@ -192,13 +207,74 @@ export class SessionsService {
          s.first_name AS "firstName",
          s.last_name AS "lastName",
          s.father_name AS "fatherName",
+         s.id_card_number AS "idCardNumber",
+         s.birth_date AS "birthDate",
+         s.description
+       FROM students s
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM session_students ss
+         WHERE ss.session_id = $1
+           AND ss.student_id = s.id
+       )
+       ${filterClause}
+       ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC`,
+      parameters,
+    );
+  }
+
+  async getSessionStudents(
+    sessionId: number,
+    userId: number,
+    userRole: Role,
+    filters: StudentSearchFilters = {},
+  ) {
+    const session = await this.findSessionOrFail(sessionId);
+    this.assertCanManageSession(session, userId, userRole);
+
+    const parameters: Array<string | number> = [sessionId];
+    const filterClause = this.buildStudentSearchClause(filters, parameters);
+
+    return this.sessionRepository.manager.query(
+      `SELECT
+         s.id,
+         s.student_code AS "studentCode",
+         s.first_name AS "firstName",
+         s.last_name AS "lastName",
+         s.father_name AS "fatherName",
+         s.id_card_number AS "idCardNumber",
+         s.birth_date AS "birthDate",
          s.description
        FROM students s
        INNER JOIN session_students ss ON ss.student_id = s.id
        WHERE ss.session_id = $1
-       ORDER BY s.last_name ASC, s.first_name ASC`,
-      [sessionId],
+       ${filterClause}
+       ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC`,
+      parameters,
     );
+  }
+
+  private buildStudentSearchClause(
+    filters: StudentSearchFilters,
+    parameters: Array<string | number>,
+  ): string {
+    const conditions: string[] = [];
+    const fields: Array<[keyof StudentSearchFilters, string]> = [
+      ['studentCode', 's.student_code'],
+      ['firstName', 's.first_name'],
+      ['lastName', 's.last_name'],
+      ['idCardNumber', 's.id_card_number'],
+    ];
+
+    for (const [field, column] of fields) {
+      const value = filters[field]?.trim();
+      if (!value) continue;
+
+      parameters.push(`%${value}%`);
+      conditions.push(`${column} ILIKE $${parameters.length}`);
+    }
+
+    return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
   }
 
   async removeStudentFromSession(

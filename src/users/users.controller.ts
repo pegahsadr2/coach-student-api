@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
   ParseIntPipe,
+  Query,
   Patch,
   Post,
   Req,
@@ -16,6 +18,7 @@ import {
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,6 +28,7 @@ import { UsersService } from './users.service';
 import { Role } from './enums/role.enum';
 import { CreateCoachDto } from './dto/create-coach.dto';
 import { UpdateCoachDto } from './dto/update-coach.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth('access-token')
@@ -63,6 +67,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.HEAD_COACH)
   async createCoach(@Body() dto: CreateCoachDto) {
+
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     const coach = await this.usersService.createCoach({
@@ -80,14 +85,25 @@ export class UsersController {
   }
 
   @ApiOperation({
-    summary: 'List coaches',
-    description: 'Head coach only. Password hashes are never included in the response.',
+    summary: 'List/search coaches',
+    description: 'Head coach only. Supports case-insensitive partial search by first name, last name, and personnel code. Password hashes are never included in the response.',
   })
+  @ApiQuery({ name: 'firstName', required: false, example: 'Sara', description: 'Filter by first-name fragment.' })
+  @ApiQuery({ name: 'lastName', required: false, example: 'Ahmadi', description: 'Filter by last-name fragment.' })
+  @ApiQuery({ name: 'personnelCode', required: false, example: 'COACH00', description: 'Filter by personnel-code fragment.' })
   @Get('coaches')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.HEAD_COACH)
-  listCoaches() {
-    return this.usersService.findAllCoaches();
+  listCoaches(
+    @Query('firstName') firstName?: string,
+    @Query('lastName') lastName?: string,
+    @Query('personnelCode') personnelCode?: string,
+  ) {
+    return this.usersService.findAllCoaches({
+      firstName,
+      lastName,
+      personnelCode,
+    });
   }
 
   @ApiOperation({
@@ -134,6 +150,34 @@ export class UsersController {
     return {
       message: 'Coach updated successfully',
       coach: this.toPublicCoach(coach),
+    };
+  }
+
+
+  @ApiOperation({
+    summary: 'Reset a coach password',
+    description: 'Head coach only. Sets a new password for an existing coach.',
+  })
+  @ApiParam({
+    name: 'id',
+    example: 2,
+    description: 'Existing coach ID.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @Patch('coaches/:id/reset-password')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.HEAD_COACH)
+  async resetCoachPassword(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResetPasswordDto,
+  ) {
+    const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+
+    await this.usersService.resetCoachPassword(id, passwordHash);
+
+    return {
+      message: 'Coach password reset successfully',
+      coachId: id,
     };
   }
 

@@ -9,6 +9,8 @@ import { ExamsService } from './exams.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { ExamAreaResult } from './entities/exam-area-result.entity';
 import { ExamActivity } from './entities/exam-activity.entity';
+import { ExamIntegrationController } from './exam-integration.controller';
+import { ExamIntegrationGuard } from './guards/exam-integration.guard';
 
 @Module({
   imports: [
@@ -21,7 +23,7 @@ import { ExamActivity } from './entities/exam-activity.entity';
       Coach,
     ]),
   ],
-  controllers: [ExamsController],
-  providers: [ExamsService, RolesGuard],
+  controllers: [ExamsController, ExamIntegrationController],
+  providers: [ExamsService, RolesGuard, ExamIntegrationGuard],
 })
 export class ExamsModule {}

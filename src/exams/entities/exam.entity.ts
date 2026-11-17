@@ -18,6 +18,22 @@ export class Exam {
   examAreaId: number | null;
 
   @Column({
+    name: 'base_score',
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    nullable: true,
+  })
+  baseScore: string | null;
+  
+  @Column({
+    name: 'duration_minutes',
+    type: 'integer',
+    nullable: true,
+  })
+  durationMinutes: number | null;
+
+  @Column({
     type: 'varchar',
     length: 10,
     default: 'exam',
@@ -48,10 +64,10 @@ export class Exam {
 
   @Column({
     type: 'varchar',
-    length: 20,
+    length: 30,
     default: 'PENDING',
   })
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED';
+  status: 'PENDING' | 'IN_PROGRESS'  | 'AWAITING_STUDENT_REVIEW' | 'COMPLETED' | 'ABANDONED';
 
   @Column({
     name: 'total_score',

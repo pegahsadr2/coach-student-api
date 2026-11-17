@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import {
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -32,6 +34,39 @@ import { CoursesService } from './courses.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CoursesController {
   constructor(private readonly coursesService: CoursesService) {}
+
+  @ApiOperation({
+    summary: 'List/search all courses',
+    description: 'Head coach only. Includes assigned coaches. Date filters are optional; name search is case-insensitive and partial.',
+  })
+  @ApiQuery({ name: 'name', required: false, example: 'Autumn', description: 'Filter by a course-name fragment.' })
+  @ApiQuery({ name: 'startDate', required: false, example: '2026-10-01', description: 'Exact course start date (YYYY-MM-DD).' })
+  @ApiQuery({ name: 'endDate', required: false, example: '2027-03-31', description: 'Exact course end date (YYYY-MM-DD).' })
+  @ApiQuery({ name: 'startDateFrom', required: false, example: '2026-10-01', description: 'Minimum course start date (inclusive).' })
+  @ApiQuery({ name: 'startDateTo', required: false, example: '2026-12-31', description: 'Maximum course start date (inclusive).' })
+  @ApiQuery({ name: 'endDateFrom', required: false, example: '2027-01-01', description: 'Minimum course end date (inclusive).' })
+  @ApiQuery({ name: 'endDateTo', required: false, example: '2027-03-31', description: 'Maximum course end date (inclusive).' })
+  @Get()
+  @Roles(Role.HEAD_COACH)
+  findAll(
+    @Query('name') name?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('startDateFrom') startDateFrom?: string,
+    @Query('startDateTo') startDateTo?: string,
+    @Query('endDateFrom') endDateFrom?: string,
+    @Query('endDateTo') endDateTo?: string,
+  ) {
+    return this.coursesService.findAll({
+      name,
+      startDate,
+      endDate,
+      startDateFrom,
+      startDateTo,
+      endDateFrom,
+      endDateTo,
+    });
+  }
 
   @ApiOperation({
     summary: 'Create a course/term',
@@ -87,6 +122,52 @@ export class CoursesController {
   }
 
   @ApiOperation({
+    summary: 'List coaches already assigned to a course',
+    description: 'Head coach only. Optional filters search by first name, last name, or personnel code.',
+  })
+  @ApiParam({ name: 'id', example: 1, description: 'Existing course ID.' })
+  @ApiQuery({ name: 'firstName', required: false, example: 'Sara' })
+  @ApiQuery({ name: 'lastName', required: false, example: 'Ahmadi' })
+  @ApiQuery({ name: 'personnelCode', required: false, example: 'COACH00' })
+  @Get(':id/coaches')
+  @Roles(Role.HEAD_COACH)
+  listAssignedCoaches(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Query('firstName') firstName?: string,
+    @Query('lastName') lastName?: string,
+    @Query('personnelCode') personnelCode?: string,
+  ) {
+    return this.coursesService.findAssignedCoaches(courseId, {
+      firstName,
+      lastName,
+      personnelCode,
+    });
+  }
+
+  @ApiOperation({
+    summary: 'List coaches not yet assigned to a course',
+    description: 'Head coach only. Optional filters search by first name, last name, or personnel code.',
+  })
+  @ApiParam({ name: 'id', example: 1, description: 'Existing course ID.' })
+  @ApiQuery({ name: 'firstName', required: false, example: 'Sara' })
+  @ApiQuery({ name: 'lastName', required: false, example: 'Ahmadi' })
+  @ApiQuery({ name: 'personnelCode', required: false, example: 'COACH00' })
+  @Get(':id/coaches/available')
+  @Roles(Role.HEAD_COACH)
+  listAvailableCoaches(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Query('firstName') firstName?: string,
+    @Query('lastName') lastName?: string,
+    @Query('personnelCode') personnelCode?: string,
+  ) {
+    return this.coursesService.findAvailableCoaches(courseId, {
+      firstName,
+      lastName,
+      personnelCode,
+    });
+  }
+
+  @ApiOperation({
     summary: 'Assign a coach to a course',
     description: 'Use the course ID in the path and an existing coach ID in the body.',
   })
@@ -101,13 +182,28 @@ export class CoursesController {
     return this.coursesService.assignCoach(courseId, dto.coachId);
   }
 
+  @ApiOperation({ summary: 'Remove a coach from a course' })
+  @ApiParam({ name: 'id', example: 1, description: 'Existing course ID.' })
+  @ApiParam({ name: 'coachId', example: 2, description: 'Assigned coach ID.' })
+  @Delete(':id/coaches/:coachId')
+  @Roles(Role.HEAD_COACH)
+  removeCoach(
+    @Param('id', ParseIntPipe) courseId: number,
+    @Param('coachId', ParseIntPipe) coachId: number,
+  ) {
+    return this.coursesService.removeCoach(courseId, coachId);
+  }
+
   @ApiOperation({
     summary: 'Get my courses',
-    description: 'Returns courses assigned to the authenticated coach. No request body is needed.',
+    description: 'Coaches receive courses assigned to them. Head coaches receive all courses. No request body is needed.',
   })
   @Get('my')
-  @Roles(Role.COACH)
+  @Roles(Role.COACH, Role.HEAD_COACH)
   getMyCourses(@Req() request: any) {
-    return this.coursesService.getMyCourses(Number(request.user.id));
+    return this.coursesService.getMyCourses(
+      Number(request.user.id),
+      request.user.role,
+    );
   }
 }

@@ -48,7 +48,7 @@ export class ErrorTypesController {
     return this.errorTypesService.createVisualError(dto);
   }
 
-  @ApiOperation({ summary: 'Update an error type', description: 'Send only the fields that should change.' })
+  @ApiOperation({ summary: 'Update an error type', description: 'For visual errors, name, examAreaId, and penalty may be changed. For procedure and coach_applied errors, only penalty may be changed.' })
   @ApiParam({ name: 'id', example: 1, description: 'Existing error type ID.' })
   @ApiBody({ type: UpdateErrorTypeDto })
   @Patch(':id')
@@ -60,7 +60,7 @@ export class ErrorTypesController {
     return this.errorTypesService.update(id, dto);
   }
 
-  @ApiOperation({ summary: 'Delete an error type', description: 'Head coach only. The service applies the project rules for deleting error types.' })
+  @ApiOperation({ summary: 'Delete an error type', description: 'Head coach only. Only visual errors can be deleted, and only if they have not been used in an exam activity.' })
   @ApiParam({ name: 'id', example: 1, description: 'Existing error type ID.' })
   @Delete(':id')
   @Roles(Role.HEAD_COACH)

@@ -48,9 +48,13 @@ export class UsersService {
     return this.coachRepository.save(coach);
   }
 
-  async findAllCoaches() {
-    // Explicitly select public fields so password hashes are not loaded or returned.
-    return this.coachRepository
+  async findAllCoaches(filters: {
+    firstName?: string;
+    lastName?: string;
+    personnelCode?: string;
+  } = {}) {
+    // Explicitly select public fields so password hashes are never loaded or returned.
+    const query = this.coachRepository
       .createQueryBuilder('coach')
       .select([
         'coach.id',
@@ -60,9 +64,27 @@ export class UsersService {
         'coach.role',
         'coach.createdAt',
       ])
-      .where('coach.role = :role', { role: Role.COACH })
-      .orderBy('coach.createdAt', 'DESC')
-      .getMany();
+      .where('coach.role = :role', { role: Role.COACH });
+
+    if (filters.firstName?.trim()) {
+      query.andWhere('LOWER(coach.firstName) LIKE LOWER(:firstName)', {
+        firstName: `%${filters.firstName.trim()}%`,
+      });
+    }
+
+    if (filters.lastName?.trim()) {
+      query.andWhere('LOWER(coach.lastName) LIKE LOWER(:lastName)', {
+        lastName: `%${filters.lastName.trim()}%`,
+      });
+    }
+
+    if (filters.personnelCode?.trim()) {
+      query.andWhere('LOWER(coach.personnelCode) LIKE LOWER(:personnelCode)', {
+        personnelCode: `%${filters.personnelCode.trim()}%`,
+      });
+    }
+
+    return query.orderBy('coach.createdAt', 'DESC').getMany();
   }
 
   async findCoachById(id: number): Promise<Coach> {
@@ -142,6 +164,21 @@ export class UsersService {
 
   async updatePasswordHash(id: number, passwordHash: string): Promise<void> {
     const result = await this.coachRepository.update({ id }, { passwordHash });
+
+    if (!result.affected) {
+      throw new NotFoundException('Coach not found');
+    }
+  }
+
+
+  async resetCoachPassword(
+    id: number,
+    passwordHash: string,
+  ): Promise<void> {
+    const result = await this.coachRepository.update(
+      { id, role: Role.COACH },
+      { passwordHash },
+    );
 
     if (!result.affected) {
       throw new NotFoundException('Coach not found');

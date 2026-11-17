@@ -111,13 +111,13 @@ export class AuthService {
 
     // Guest credentials are temporary and do not create a database account.
     const accessToken = await this.jwtService.signAsync(payload, {
-      expiresIn: '30m',
+      expiresIn: '1h',
     });
 
     return {
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: 1800,
+      expires_in: 3600,
       guest_mode: true,
       user: {
         id: guestId,
@@ -134,13 +134,21 @@ export class AuthService {
     );
   }
 
-  async changePassword(userId: number, role: Role, dto: ChangePasswordDto) {
+  async changePassword(
+    userId: number,
+    role: Role,
+    dto: ChangePasswordDto,
+    jti: string,
+    tokenExpiresAt: number,
+  ) {
     if (
       role !== Role.STUDENT &&
       role !== Role.COACH &&
       role !== Role.HEAD_COACH
     ) {
-      throw new ForbiddenException('Guest accounts cannot change passwords');
+      throw new ForbiddenException(
+        'Guest accounts cannot change passwords',
+      );
     }
 
     if (role === Role.STUDENT) {
@@ -152,23 +160,27 @@ export class AuthService {
       }
 
       const isCurrentPasswordValid = await bcrypt.compare(
-      dto.currentPassword,
+        dto.currentPassword,
         student.passwordHash,
       );
 
       if (!isCurrentPasswordValid) {
-        throw new UnauthorizedException('Current password is incorrect');
+        throw new UnauthorizedException(
+          'Current password is incorrect',
+        );
       }
 
-      student.passwordHash = await bcrypt.hash(dto.newPassword, 12);
+      const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+
       await this.studentsService.updatePasswordHash(
         student.id,
-        student.passwordHash,
+        passwordHash,
       );
     } else {
-      const coach = await this.usersService.findByIdForPasswordChange(userId);
+      const coach =
+        await this.usersService.findByIdForPasswordChange(userId);
 
-      if (!coach) {
+      if (!coach || !coach.passwordHash) {
         throw new UnauthorizedException('User not found');
       }
 
@@ -178,14 +190,28 @@ export class AuthService {
       );
 
       if (!isCurrentPasswordValid) {
-        throw new UnauthorizedException('Current password is incorrect');
+        throw new UnauthorizedException(
+          'Current password is incorrect',
+        );
       }
 
       const passwordHash = await bcrypt.hash(dto.newPassword, 12);
-      await this.usersService.updatePasswordHash(coach.id, passwordHash);
+
+      await this.usersService.updatePasswordHash(
+        coach.id,
+        passwordHash,
+      );
     }
 
-    return { message: 'Password changed successfully' };
+    // Revoke the current access token after password change.
+    await this.tokenRevocationService.revoke(
+      jti,
+      new Date(tokenExpiresAt * 1000),
+    );
+
+    return {
+      message: 'Password changed successfully. Please log in again.',
+    };
   }
 
   async logout(jti?: string, tokenExpiresAt?: number) {

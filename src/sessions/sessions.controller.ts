@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Req,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -15,6 +16,8 @@ import {
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -127,21 +130,62 @@ export class SessionsController {
   }
 
   @ApiOperation({
-    summary: 'List students in a session',
+    summary: 'List students not yet enrolled in a session',
     description:
-      'Use an existing session ID visible to the authenticated coach/head coach. No request body is needed.',
+      'Coach or head coach only. Returns students who are not enrolled in the selected session. Optional case-insensitive partial filters are studentCode, firstName, lastName, and idCardNumber. A coach can only query sessions they manage. No request body is needed.',
   })
   @ApiParam({ name: 'id', example: 1, description: 'Existing session ID.' })
+  @ApiQuery({ name: 'studentCode', required: false, example: 'ST003' })
+  @ApiQuery({ name: 'firstName', required: false, example: 'Ali' })
+  @ApiQuery({ name: 'lastName', required: false, example: 'Ahmadi' })
+  @ApiQuery({ name: 'idCardNumber', required: false, example: '123456' })
+  @ApiResponse({ status: 200, description: 'Students not enrolled in the session, without password hashes.' })
+  @ApiResponse({ status: 403, description: 'The coach cannot manage this session.' })
+  @Get(':id/students/available')
+  @Roles(Role.COACH, Role.HEAD_COACH)
+  getAvailableStudents(
+    @Param('id', ParseIntPipe) sessionId: number,
+    @Query('studentCode') studentCode: string | undefined,
+    @Query('firstName') firstName: string | undefined,
+    @Query('lastName') lastName: string | undefined,
+    @Query('idCardNumber') idCardNumber: string | undefined,
+    @Req() request: any,
+  ) {
+    return this.sessionsService.getAvailableStudents(
+      sessionId,
+      Number(request.user.id),
+      request.user.role,
+      { studentCode, firstName, lastName, idCardNumber },
+    );
+  }
+
+  @ApiOperation({
+    summary: 'List/search students enrolled in a session',
+    description:
+      'Coach or head coach only. Optional case-insensitive partial filters are studentCode, firstName, lastName, and idCardNumber. Supplied filters are combined with AND. A coach can only query sessions they manage. No request body is needed.',
+  })
+  @ApiParam({ name: 'id', example: 1, description: 'Existing session ID.' })
+  @ApiQuery({ name: 'studentCode', required: false, example: 'ST003' })
+  @ApiQuery({ name: 'firstName', required: false, example: 'Ali' })
+  @ApiQuery({ name: 'lastName', required: false, example: 'Ahmadi' })
+  @ApiQuery({ name: 'idCardNumber', required: false, example: '123456' })
+  @ApiResponse({ status: 200, description: 'Enrolled students, with searchable identity fields and without password hashes.' })
+  @ApiResponse({ status: 403, description: 'The coach cannot manage this session.' })
   @Get(':id/students')
   @Roles(Role.COACH, Role.HEAD_COACH)
   getSessionStudents(
     @Param('id', ParseIntPipe) sessionId: number,
+    @Query('studentCode') studentCode: string | undefined,
+    @Query('firstName') firstName: string | undefined,
+    @Query('lastName') lastName: string | undefined,
+    @Query('idCardNumber') idCardNumber: string | undefined,
     @Req() request: any,
   ) {
     return this.sessionsService.getSessionStudents(
       sessionId,
       Number(request.user.id),
       request.user.role,
+      { studentCode, firstName, lastName, idCardNumber },
     );
   }
 
